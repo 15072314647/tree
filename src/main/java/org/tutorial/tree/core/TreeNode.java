@@ -1,7 +1,6 @@
 package org.tutorial.tree.core;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,25 +31,33 @@ public class TreeNode<T extends IData> {
         if (null == datas || datas.size() < 1) {
             return;
         }
-        int size = 0;
-        Map<Serializable, TreeNode<T>> cacheNodes = new ConcurrentHashMap<>();
-        // 树有几层就遍历几遍
-        do {
-            size = datas.size();// 判断列表是否有改变
-            List<T> filters = new ArrayList<>();
-            for (T data : datas) {
-                if (root != data.getParentId() && !cacheNodes.containsKey(data.getParentId())) {
-                    filters.add(data);
-                } else {
-                    TreeNode<T> node = new TreeNode<T>(data);
-                    cacheNodes.put(data.getId(), node);
-                    TreeNode<T> parent = root == data.getParentId() ? this : cacheNodes.get(data.getParentId());
-                    node.setNextSibling(parent.getFirstChild());
-                    parent.setFirstChild(node);
-                }
+        Map<Serializable, TreeNode<T>> cacheNodes = new ConcurrentHashMap<>();// 已经处理过的节点
+        Map<Serializable, TreeNode<T>> withOutNodes = new ConcurrentHashMap<>();// 失联节点
+        for (T data : datas) {
+            TreeNode<T> node = new TreeNode<T>(data);
+            cacheNodes.put(data.getId(), node);
+            TreeNode<T> parent = root == data.getParentId() ? this : cacheNodes.get(data.getParentId());
+            if (withOutNodes.containsKey(data.getId())) {
+                // 当前节点是父节点，且已经存在失联的子节点
+                node.setFirstChild(withOutNodes.get(data.getId()));
+                withOutNodes.remove(data.getId());
             }
-            datas = filters;
-        } while (size != datas.size() && datas.size() >= 0);// 列表为空，或者连续两次列表无改变则认为任务结束
+            if (parent != null) {
+                // 当前节点是子节点，而且其父节点已处理过
+                node.setNextSibling(parent.getFirstChild());
+                parent.setFirstChild(node);
+            } else {
+                if (withOutNodes.containsKey(data.getParentId())) {
+                    // 当前节点是子节点，且已经存在兄弟节点
+                    node.setNextSibling(withOutNodes.get(data.getParentId()));
+                }
+                withOutNodes.put(data.getParentId(), node);
+            }
+        }
+        if (withOutNodes.size() > 0) {
+            // FIXME 后期改成记录日志
+            throw new RuntimeException("当前树存在游离节点");
+        }
     }
 
     /**
